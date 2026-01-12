@@ -95,7 +95,7 @@ public class DsifCatalogExtension implements ServiceExtension {
                                      DsifManifestService manifestService,
                                      DsifCatalogService catalogService,
                                      DsifSearchService searchService) {
-        // Register .well-known endpoints
+        // Register .well-known endpoints (served under /api prefix)
         var wellKnownController = new WellKnownController(manifestService, config);
         webService.registerResource(wellKnownController);
 
