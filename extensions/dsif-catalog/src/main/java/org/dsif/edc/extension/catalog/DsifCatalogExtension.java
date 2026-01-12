@@ -10,7 +10,6 @@ import org.eclipse.edc.connector.controlplane.asset.spi.index.AssetIndex;
 import org.eclipse.edc.connector.controlplane.catalog.spi.DatasetResolver;
 import org.eclipse.edc.runtime.metamodel.annotation.Extension;
 import org.eclipse.edc.runtime.metamodel.annotation.Inject;
-import org.eclipse.edc.runtime.metamodel.annotation.Setting;
 import org.eclipse.edc.spi.system.ServiceExtension;
 import org.eclipse.edc.spi.system.ServiceExtensionContext;
 import org.eclipse.edc.web.spi.WebService;
@@ -41,27 +40,6 @@ public class DsifCatalogExtension implements ServiceExtension {
 
     public static final String NAME = "DSIF Catalog Extension";
     public static final String VERSION = "0.1.0";
-
-    @Setting(description = "Unique catalog identifier", key = DsifConfiguration.CATALOG_ID)
-    private String catalogId;
-
-    @Setting(description = "Catalog title", key = DsifConfiguration.CATALOG_TITLE)
-    private String catalogTitle;
-
-    @Setting(description = "Catalog description", key = DsifConfiguration.CATALOG_DESCRIPTION)
-    private String catalogDescription;
-
-    @Setting(description = "Sector name (e.g., skills, health)", key = DsifConfiguration.CATALOG_SECTOR)
-    private String catalogSector;
-
-    @Setting(description = "Publisher DID or URI", key = DsifConfiguration.PUBLISHER_ID)
-    private String publisherId;
-
-    @Setting(description = "Publisher name", key = DsifConfiguration.PUBLISHER_NAME)
-    private String publisherName;
-
-    @Setting(description = "Public base URL for DSIF endpoints", key = DsifConfiguration.BASE_URL)
-    private String baseUrl;
 
     @Inject
     private WebService webService;

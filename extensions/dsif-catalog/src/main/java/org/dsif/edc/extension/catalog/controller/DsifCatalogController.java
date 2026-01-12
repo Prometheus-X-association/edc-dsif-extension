@@ -168,7 +168,7 @@ public class DsifCatalogController {
         // Use default participant context (the connector itself)
         return ParticipantContext.Builder.newInstance()
                 .participantContextId(config.getCatalogId())
-                .apiTokenAlias("default")
+                .identity(config.getPublisherId())
                 .build();
     }
 

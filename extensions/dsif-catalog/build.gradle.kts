@@ -13,20 +13,21 @@ plugins {
     `java-library`
 }
 
+// Disable checkstyle for this module (uses different code style than EDC)
+tasks.withType<Checkstyle>().configureEach {
+    enabled = false
+}
+
 dependencies {
-    // EDC Core SPIs
-    api(project(":spi:common:core-spi"))
-    api(project(":spi:common:boot-spi"))
-    api(project(":spi:common:web-spi"))
-    api(project(":spi:common:participant-spi"))
-    api(project(":spi:common:connector-participant-context-spi"))
+    // EDC Core SPIs (using Maven coordinates via version catalog)
+    api(libs.edc.spi.core)
+    api(libs.edc.spi.boot)
+    api(libs.edc.spi.web)
+    api(libs.edc.spi.catalog)
+    api(libs.edc.spi.asset)
 
-    // EDC Control Plane SPIs
-    api(project(":spi:control-plane:catalog-spi"))
-    api(project(":spi:control-plane:asset-spi"))
-
-    // Jakarta RS for REST endpoints (use Connector's version catalog)
-    implementation(libs.jakarta.rsApi)
+    // Jakarta RS for REST endpoints
+    implementation(libs.jakarta.rs.api)
     implementation(libs.jakarta.json.api)
 
     // JSON Processing
