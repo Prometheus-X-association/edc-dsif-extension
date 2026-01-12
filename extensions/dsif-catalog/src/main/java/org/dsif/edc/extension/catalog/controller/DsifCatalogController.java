@@ -6,16 +6,11 @@ package org.dsif.edc.extension.catalog.controller;
 
 import jakarta.json.JsonObject;
 import jakarta.ws.rs.*;
-import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.dsif.edc.extension.catalog.DsifConfiguration;
 import org.dsif.edc.extension.catalog.model.ProblemDetail;
 import org.dsif.edc.extension.catalog.service.DsifCatalogService;
-import org.eclipse.edc.participant.spi.ParticipantAgent;
-import org.eclipse.edc.participantcontext.spi.types.ParticipantContext;
 import org.eclipse.edc.spi.system.ServiceExtensionContext;
-
-import java.util.Map;
 
 /**
  * Controller for DSIF DCAT catalog endpoints.
@@ -76,13 +71,10 @@ public class DsifCatalogController {
         }
 
         try {
-            // Get participant context and agent for DatasetResolver
-            ParticipantContext participantContext = getParticipantContext();
-            ParticipantAgent participantAgent = getAnonymousAgent();
-
-            // Use DsifCatalogService which wraps DatasetResolver
+            // Use DsifCatalogService - pass null for anonymous/public access
+            // This triggers the AssetIndex fallback for browsing without authentication
             JsonObject catalog = catalogService.getCatalog(
-                page, participantContext, participantAgent, DEFAULT_PROTOCOL
+                page, null, null, DEFAULT_PROTOCOL
             );
 
             return Response.ok(catalog.toString())
@@ -127,12 +119,9 @@ public class DsifCatalogController {
         }
 
         try {
-            // Get participant context and agent
-            ParticipantContext participantContext = getParticipantContext();
-            ParticipantAgent participantAgent = getAnonymousAgent();
-
+            // Use null for anonymous/public access - triggers AssetIndex fallback
             JsonObject dataset = catalogService.getDatasetJsonLd(
-                id, participantContext, participantAgent, DEFAULT_PROTOCOL
+                id, null, null, DEFAULT_PROTOCOL
             );
 
             if (dataset == null) {
@@ -158,27 +147,6 @@ public class DsifCatalogController {
                 Response.Status.INTERNAL_SERVER_ERROR
             );
         }
-    }
-
-    /**
-     * Create a default participant context for DSIF endpoints.
-     * DSIF endpoints are public, so we use the connector's default context.
-     */
-    private ParticipantContext getParticipantContext() {
-        // Use default participant context (the connector itself)
-        return ParticipantContext.Builder.newInstance()
-                .participantContextId(config.getCatalogId())
-                .identity(config.getPublisherId())
-                .build();
-    }
-
-    /**
-     * Create an anonymous participant agent for public DSIF access.
-     * DSIF read endpoints don't require authentication per spec.
-     */
-    private ParticipantAgent getAnonymousAgent() {
-        // Anonymous agent for public catalog access
-        return new ParticipantAgent(Map.of(), Map.of());
     }
 
     private Response problemResponse(ProblemDetail problem, Response.Status status) {

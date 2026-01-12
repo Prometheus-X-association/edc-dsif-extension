@@ -12,13 +12,18 @@ The extension enables an EDC connector to participate in the DSIF federated cata
 
 1. **Uses existing EDC models**: `Catalog`, `Dataset`, `Distribution`, `DataService`
 2. **Uses existing services**:
-   - `DatasetResolver` for Asset → Dataset transformation
-   - `AssetIndex` with `QuerySpec` for filtering, pagination, sorting
+   - `DatasetResolver` for Asset → Dataset transformation (when participant context available)
+   - `AssetIndex` with `QuerySpec` for filtering, pagination, sorting (fallback for anonymous access)
 3. **Adds DSIF-specific features**:
    - Hydra pagination format
    - DSIF provenance fields (`originCatalogId`, `federationPath`, `hopCount`)
    - Federation Manifest and Connection Profile
    - Neutral Search response format
+
+## EDC Version Compatibility
+
+- **Target EDC Version**: 0.15.1
+- **Tested with**: edc-connector (STBX EDC Connector)
 
 ## Reference Specifications
 
@@ -112,7 +117,7 @@ DSIF Extension
 ### DsifCatalogService
 
 ```java
-// Uses EDC's DatasetResolver
+// Uses EDC's DatasetResolver with AssetIndex fallback for anonymous access
 public JsonObject getCatalog(int page, ParticipantContext ctx,
                               ParticipantAgent agent, String protocol) {
     // 1. Build QuerySpec with pagination
@@ -121,14 +126,29 @@ public JsonObject getCatalog(int page, ParticipantContext ctx,
         .limit(pageSize)
         .build();
 
-    // 2. Use DatasetResolver (reuses EDC's Asset → Dataset logic)
-    List<Dataset> datasets = datasetResolver.query(ctx, agent, querySpec, protocol)
-        .collect(toList());
+    List<Dataset> datasets;
+    long totalItems;
 
-    // 3. Build JSON-LD with Hydra pagination + DSIF provenance
+    // 2. Try DatasetResolver if participant context available
+    if (ctx != null && agent != null) {
+        datasets = datasetResolver.query(ctx, agent, querySpec, protocol)
+            .collect(toList());
+        totalItems = datasetResolver.query(ctx, agent, QuerySpec.max(), protocol)
+            .count();
+    } else {
+        // 3. Fallback to AssetIndex for anonymous/public access
+        datasets = assetIndex.queryAssets(querySpec)
+            .map(this::assetToDataset)
+            .collect(toList());
+        totalItems = assetIndex.queryAssets(QuerySpec.max()).count();
+    }
+
+    // 4. Build JSON-LD with Hydra pagination + DSIF provenance
     return buildCatalogJsonLd(datasets, page, totalItems);
 }
 ```
+
+**Note**: The AssetIndex fallback enables anonymous catalog browsing via DSIF endpoints without requiring DSP protocol authentication. This is essential for public catalog discovery.
 
 ### DsifSearchService
 
@@ -178,10 +198,14 @@ public SearchResult search(SearchParams params) {
 - [x] DSIF-specific models (FederationManifest, SearchResult, etc.)
 - [x] Manifest service (`DsifManifestService`)
 - [x] Health service (`DsifHealthService`)
-- [x] Catalog service using `DatasetResolver` (`DsifCatalogService`)
+- [x] Catalog service using `DatasetResolver` with `AssetIndex` fallback (`DsifCatalogService`)
 - [x] Search service using `AssetIndex` + `QuerySpec` (`DsifSearchService`)
 - [x] REST controllers for all endpoints
 - [x] ServiceExtension with proper dependency injection
+- [x] Integration with edc-connector via symlink
+- [x] EDC 0.15.1 version alignment
+- [x] Maven coordinates for dependencies (instead of project references)
+- [x] Anonymous catalog browsing (AssetIndex fallback when no participant context)
 
 ### Remaining
 
@@ -189,6 +213,41 @@ public SearchResult search(SearchParams params) {
 - [ ] Integration tests
 - [ ] SHACL validation for DCAT output
 - [ ] JSON Schema validation for manifests
+- [ ] Improve property mapping in catalog (use `name` property for title)
+
+## Integration with edc-connector
+
+The extension is integrated into the STBX EDC Connector via symlink:
+
+```
+edc-connector/extensions/dsif-catalog -> ../../edc-dsif-extension/extensions/dsif-catalog
+```
+
+### Build Configuration
+
+The `build.gradle.kts` uses Maven coordinates (not project references) for EDC dependencies:
+
+```kotlin
+dependencies {
+    // EDC Core SPIs (using Maven coordinates via version catalog)
+    api(libs.edc.spi.core)
+    api(libs.edc.spi.boot)
+    api(libs.edc.spi.web)
+    api(libs.edc.spi.catalog)
+    api(libs.edc.spi.asset)
+
+    // Jakarta RS for REST endpoints
+    implementation(libs.jakarta.rs.api)
+    implementation(libs.jakarta.json.api)
+    implementation(libs.parsson)
+}
+```
+
+### Notes
+
+- Checkstyle is disabled for this module (different code style than EDC)
+- `@Setting` annotations removed to avoid EDC annotation processor issues
+- Configuration is read via `ServiceExtensionContext.getSetting()` in `DsifConfiguration`
 
 ## Acceptance Criteria
 

@@ -74,11 +74,11 @@ public class DsifCatalogExtension implements ServiceExtension {
         // Initialize services
         // - DsifManifestService: builds DSIF-specific manifests
         // - DsifHealthService: health monitoring
-        // - DsifCatalogService: wraps DatasetResolver, adds Hydra pagination
+        // - DsifCatalogService: wraps DatasetResolver, falls back to AssetIndex for anonymous access
         // - DsifSearchService: uses AssetIndex with QuerySpec, transforms to DSIF format
         var manifestService = new DsifManifestService(config);
         healthService = new DsifHealthService(config, VERSION);
-        var catalogService = new DsifCatalogService(config, datasetResolver);
+        var catalogService = new DsifCatalogService(config, datasetResolver, assetIndex);
         var searchService = new DsifSearchService(config, assetIndex);
 
         // Register controllers

@@ -8,6 +8,8 @@ import jakarta.json.Json;
 import jakarta.json.JsonObject;
 import jakarta.json.JsonObjectBuilder;
 import org.dsif.edc.extension.catalog.DsifConfiguration;
+import org.eclipse.edc.connector.controlplane.asset.spi.domain.Asset;
+import org.eclipse.edc.connector.controlplane.asset.spi.index.AssetIndex;
 import org.eclipse.edc.connector.controlplane.catalog.spi.Catalog;
 import org.eclipse.edc.connector.controlplane.catalog.spi.Dataset;
 import org.eclipse.edc.connector.controlplane.catalog.spi.DatasetResolver;
@@ -25,6 +27,9 @@ import java.util.stream.Collectors;
  * This service wraps EDC's catalog infrastructure and adds:
  * - Hydra pagination (DSIF requirement)
  * - DSIF provenance fields (originCatalogId, hopCount, federationPath)
+ *
+ * When no participant context is provided (e.g., anonymous catalog browsing),
+ * falls back to using AssetIndex directly to return all available assets.
  */
 public class DsifCatalogService {
 
@@ -35,19 +40,22 @@ public class DsifCatalogService {
 
     private final DsifConfiguration config;
     private final DatasetResolver datasetResolver;
+    private final AssetIndex assetIndex;
 
-    public DsifCatalogService(DsifConfiguration config, DatasetResolver datasetResolver) {
+    public DsifCatalogService(DsifConfiguration config, DatasetResolver datasetResolver, AssetIndex assetIndex) {
         this.config = config;
         this.datasetResolver = datasetResolver;
+        this.assetIndex = assetIndex;
     }
 
     /**
      * Get paginated DCAT catalog with Hydra pagination.
-     * Uses EDC's DatasetResolver to fetch datasets.
+     * Uses EDC's DatasetResolver if participant context is available,
+     * otherwise falls back to AssetIndex for anonymous access.
      *
      * @param page Page number (1-based)
-     * @param participantContext The participant context
-     * @param participantAgent The requesting agent
+     * @param participantContext The participant context (can be null)
+     * @param participantAgent The requesting agent (can be null)
      * @param protocol The protocol version
      * @return JSON-LD catalog with Hydra pagination
      */
@@ -62,13 +70,20 @@ public class DsifCatalogService {
                 .limit(pageSize)
                 .build();
 
-        // Use DatasetResolver to get datasets (leverages existing Asset → Dataset transformation)
-        List<Dataset> datasets = datasetResolver.query(participantContext, participantAgent, querySpec, protocol)
-                .collect(Collectors.toList());
+        List<Dataset> datasets;
+        long totalItems;
 
-        // Count total (need a separate query)
-        long totalItems = datasetResolver.query(participantContext, participantAgent, QuerySpec.max(), protocol)
-                .count();
+        // Try DatasetResolver first if participant context is available
+        if (participantContext != null && participantAgent != null) {
+            datasets = datasetResolver.query(participantContext, participantAgent, querySpec, protocol)
+                    .collect(Collectors.toList());
+            totalItems = datasetResolver.query(participantContext, participantAgent, QuerySpec.max(), protocol)
+                    .count();
+        } else {
+            // Fallback: use AssetIndex directly for anonymous access
+            datasets = queryAssetsAsDatasets(querySpec);
+            totalItems = assetIndex.queryAssets(QuerySpec.max()).count();
+        }
 
         int totalPages = (int) Math.ceil((double) totalItems / pageSize);
 
@@ -77,18 +92,52 @@ public class DsifCatalogService {
     }
 
     /**
+     * Query assets and convert them to Dataset objects for catalog display.
+     * Used as fallback when no participant context is available.
+     */
+    private List<Dataset> queryAssetsAsDatasets(QuerySpec querySpec) {
+        return assetIndex.queryAssets(querySpec)
+                .map(this::assetToDataset)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Convert an Asset to a minimal Dataset for catalog display.
+     */
+    private Dataset assetToDataset(Asset asset) {
+        return Dataset.Builder.newInstance()
+                .id(asset.getId())
+                .properties(asset.getProperties())
+                .build();
+    }
+
+    /**
      * Get a single dataset by ID.
-     * Uses EDC's DatasetResolver.
+     * Uses EDC's DatasetResolver if participant context is available,
+     * otherwise falls back to AssetIndex.
      *
      * @param id Dataset/Asset ID
-     * @param participantContext The participant context
-     * @param participantAgent The requesting agent
+     * @param participantContext The participant context (can be null)
+     * @param participantAgent The requesting agent (can be null)
      * @param protocol The protocol version
      * @return Dataset or null if not found
      */
     public Dataset getDataset(String id, ParticipantContext participantContext,
                                ParticipantAgent participantAgent, String protocol) {
-        return datasetResolver.getById(participantContext, participantAgent, id, protocol);
+        // Try DatasetResolver first if participant context is available
+        if (participantContext != null && participantAgent != null) {
+            Dataset dataset = datasetResolver.getById(participantContext, participantAgent, id, protocol);
+            if (dataset != null) {
+                return dataset;
+            }
+        }
+
+        // Fallback: use AssetIndex directly
+        Asset asset = assetIndex.findById(id);
+        if (asset != null) {
+            return assetToDataset(asset);
+        }
+        return null;
     }
 
     /**
