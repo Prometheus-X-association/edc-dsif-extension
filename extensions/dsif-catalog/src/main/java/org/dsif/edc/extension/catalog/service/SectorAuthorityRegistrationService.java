@@ -102,10 +102,17 @@ public class SectorAuthorityRegistrationService {
             var connectionProfile = manifestService.buildConnectionProfile();
             String json = objectMapper.writeValueAsString(connectionProfile);
 
-            HttpRequest request = HttpRequest.newBuilder()
+            var requestBuilder = HttpRequest.newBuilder()
                     .uri(URI.create(registerUrl))
                     .timeout(TIMEOUT)
-                    .header("Content-Type", "application/ld+json")
+                    .header("Content-Type", "application/ld+json");
+
+            String apiKey = config.getSectorAuthorityApiKey();
+            if (apiKey != null && !apiKey.isBlank()) {
+                requestBuilder.header("Authorization", "Bearer " + apiKey);
+            }
+
+            HttpRequest request = requestBuilder
                     .POST(HttpRequest.BodyPublishers.ofString(json))
                     .build();
 
