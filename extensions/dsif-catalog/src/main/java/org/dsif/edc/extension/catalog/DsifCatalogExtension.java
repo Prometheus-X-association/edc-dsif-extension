@@ -52,6 +52,7 @@ public class DsifCatalogExtension implements ServiceExtension {
 
     private DsifConfiguration config;
     private DsifHealthService healthService;
+    private SectorAuthorityRegistrationService registrationService;
 
     @Override
     public String name() {
@@ -80,6 +81,9 @@ public class DsifCatalogExtension implements ServiceExtension {
         healthService = new DsifHealthService(config, VERSION);
         var catalogService = new DsifCatalogService(config, datasetResolver, assetIndex);
         var searchService = new DsifSearchService(config, assetIndex);
+
+        // Initialize SA registration service
+        registrationService = new SectorAuthorityRegistrationService(config, manifestService, monitor);
 
         // Register controllers
         registerControllers(context, manifestService, catalogService, searchService);
@@ -114,7 +118,14 @@ public class DsifCatalogExtension implements ServiceExtension {
 
     @Override
     public void start() {
-        // Extension started - health service is tracking uptime
+        // Register with Sector Authority if configured
+        String saUrl = config.getSectorAuthorityUrl();
+        if (saUrl == null || saUrl.isBlank()) {
+            // No SA URL configured - standalone mode
+        } else {
+            registrationService.register();
+            registrationService.verifyRegistration();
+        }
     }
 
     @Override

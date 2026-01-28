@@ -27,6 +27,7 @@ public class DsifConfiguration {
     public static final String SEARCH_MAX_PAGE_SIZE = "dsif.search.max.page.size";
     public static final String SEARCH_DEFAULT_PAGE_SIZE = "dsif.search.default.page.size";
     public static final String AUTH_SCHEME = "dsif.auth.scheme";
+    public static final String SECTOR_AUTHORITY_URL = "dsif.sector.authority.url";
 
     // Default values
     public static final String DEFAULT_DSIF_VERSION = "0.1.0";
@@ -50,6 +51,7 @@ public class DsifConfiguration {
     private final int searchMaxPageSize;
     private final int searchDefaultPageSize;
     private final String authScheme;
+    private final String sectorAuthorityUrl;
 
     public DsifConfiguration(ServiceExtensionContext context) {
         this.catalogId = context.getSetting(CATALOG_ID, context.getComponentId());
@@ -67,6 +69,7 @@ public class DsifConfiguration {
         this.searchMaxPageSize = context.getSetting(SEARCH_MAX_PAGE_SIZE, DEFAULT_MAX_PAGE_SIZE);
         this.searchDefaultPageSize = context.getSetting(SEARCH_DEFAULT_PAGE_SIZE, DEFAULT_PAGE_SIZE);
         this.authScheme = context.getSetting(AUTH_SCHEME, DEFAULT_AUTH_SCHEME);
+        this.sectorAuthorityUrl = context.getSetting(SECTOR_AUTHORITY_URL, "");
     }
 
     private String detectBaseUrl(ServiceExtensionContext context) {
@@ -121,4 +124,5 @@ public class DsifConfiguration {
     public int getSearchMaxPageSize() { return searchMaxPageSize; }
     public int getSearchDefaultPageSize() { return searchDefaultPageSize; }
     public String getAuthScheme() { return authScheme; }
+    public String getSectorAuthorityUrl() { return sectorAuthorityUrl; }
 }
