@@ -59,10 +59,16 @@ test:
 # Note: deploy-staging is manual, so you'll need to trigger it in the edc-connector pipeline
 trigger-connector-pipeline:
   stage: trigger
-  trigger:
-    project: $EDC_CONNECTOR_PROJECT_PATH
-    branch: master
-    strategy: depend
+  image: alpine:latest
+  before_script:
+    - apk add --no-cache curl
+  script:
+    - |
+      curl -X POST \
+        --fail \
+        -F "token=$CONNECTOR_TRIGGER_TOKEN" \
+        -F "ref=main" \
+        "https://git.startinblox.com/api/v4/projects/${EDC_CONNECTOR_PROJECT_ID}/trigger/pipeline"
   rules:
     - if: $CI_COMMIT_BRANCH == "master"
   when: manual

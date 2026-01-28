@@ -339,6 +339,56 @@ services:
       - "8080:8080"
 ```
 
+## CI/CD Pipeline
+
+### Pipeline Stages
+
+Push to `main` or merge request triggers:
+
+```
+build → test → trigger
+```
+
+| Stage | Job | Description |
+|-------|-----|-------------|
+| **build** | `build` | Compiles the extension JAR |
+| **test** | `checkstyle` | Code style checks (non-blocking) |
+| **test** | `test` | Runs unit tests (JUnit reports) |
+| **trigger** | `trigger-connector-pipeline` | **(Manual)** Triggers edc-connector pipeline |
+
+### Deployment Workflow
+
+This extension is deployed through the **edc-connector** pipeline, not directly.
+
+```
+edc-dsif-extension                    edc-connector
+┌─────────────────┐                  ┌──────────────────┐
+│ Push to main    │                  │                  │
+│       ↓         │                  │                  │
+│ build/test      │                  │                  │
+│       ↓         │                  │                  │
+│ trigger-connector│──(manual)──────→│ build/test       │
+│ -pipeline       │                  │ integration-test │
+└─────────────────┘                  │       ↓          │
+                                     │ deploy-staging   │
+                                     │   (manual)       │
+                                     └──────────────────┘
+```
+
+**Steps to deploy a new version of the extension:**
+1. Push changes to `main` → build and tests run automatically
+2. Manually trigger `trigger-connector-pipeline` → starts the edc-connector pipeline
+3. In edc-connector pipeline, manually trigger `deploy-staging` → deploys to VM
+4. The VM pulls the latest extension, copies it into the connector, builds, and restarts
+
+### Required GitLab CI/CD Variables
+
+Configure in Settings → CI/CD → Variables:
+
+| Variable | Description |
+|----------|-------------|
+| `EDC_CONNECTOR_PROJECT_PATH` | GitLab path to edc-connector (e.g., `applications/afp-tralalere/edc-connector`) |
+
 ## Testing
 
 Run unit tests:
@@ -347,20 +397,26 @@ Run unit tests:
 ./gradlew test
 ```
 
-Test endpoints manually:
+Run checkstyle:
+
+```bash
+./gradlew checkstyleMain
+```
+
+Test endpoints manually (requires running connector with extension):
 
 ```bash
 # Health check
-curl http://localhost:8080/dsif/health
+curl http://localhost:29191/api/dsif/health
 
 # Manifest
-curl http://localhost:8080/.well-known/dataspace-catalog.json
+curl http://localhost:29191/api/.well-known/dataspace-catalog.json
 
 # Catalog
-curl http://localhost:8080/dsif/catalog.jsonld
+curl http://localhost:29191/api/dsif/catalog.jsonld
 
 # Search
-curl "http://localhost:8080/dsif/search?q=test"
+curl "http://localhost:29191/api/dsif/search?q=test"
 ```
 
 ## License
