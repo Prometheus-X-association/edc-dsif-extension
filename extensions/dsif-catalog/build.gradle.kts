@@ -19,7 +19,7 @@ tasks.withType<Checkstyle>().configureEach {
 }
 
 dependencies {
-    // EDC Core SPIs (using Maven coordinates via version catalog)
+    // EDC Core SPIs
     api(libs.edc.spi.core)
     api(libs.edc.spi.boot)
     api(libs.edc.spi.web)
@@ -27,7 +27,7 @@ dependencies {
     api(libs.edc.spi.asset)
 
     // Jakarta RS for REST endpoints
-    implementation(libs.jakarta.rs.api)
+    implementation(libs.jakarta.rsApi)
     implementation(libs.jakarta.json.api)
 
     // JSON Processing

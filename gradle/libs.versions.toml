@@ -10,7 +10,7 @@ awaitility = "4.2.2"
 bouncyCastle-jdk18on = "1.83"
 cloudEvents = "4.0.1"
 dataplane-sdk = "0.0.2-SNAPSHOT"
-edc = "0.16.0-SNAPSHOT"
+edc = "0.15.1"
 failsafe = "3.3.2"
 h2 = "2.4.240"
 jakarta-annotation = "3.0.0"
@@ -45,6 +45,17 @@ junit = "6.0.1"
 wiremock = "3.13.2"
 
 [libraries]
+# EDC SPI modules
+edc-spi-core = { module = "org.eclipse.edc:core-spi", version.ref = "edc" }
+edc-spi-boot = { module = "org.eclipse.edc:boot-spi", version.ref = "edc" }
+edc-spi-web = { module = "org.eclipse.edc:web-spi", version.ref = "edc" }
+edc-spi-catalog = { module = "org.eclipse.edc:catalog-spi", version.ref = "edc" }
+edc-spi-asset = { module = "org.eclipse.edc:asset-spi", version.ref = "edc" }
+
+# EDC BOM for test connector
+edc-bom-controlplane = { module = "org.eclipse.edc:controlplane-base-bom", version.ref = "edc" }
+edc-iam-mock = { module = "org.eclipse.edc:iam-mock", version.ref = "edc" }
+
 iron-vc = { module = "com.apicatalog:iron-verifiable-credentials", version.ref = "apicatalog" }
 iron-ed25519 = { module = "com.apicatalog:iron-ed25519-cryptosuite-2020", version.ref = "apicatalog" }
 assertj = { module = "org.assertj:assertj-core", version.ref = "assertj" }
