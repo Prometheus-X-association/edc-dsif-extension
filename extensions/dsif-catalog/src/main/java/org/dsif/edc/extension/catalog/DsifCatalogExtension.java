@@ -83,7 +83,7 @@ public class DsifCatalogExtension implements ServiceExtension {
         var searchService = new DsifSearchService(config, assetIndex);
 
         // Initialize SA registration service
-        registrationService = new SectorAuthorityRegistrationService(config, manifestService, monitor);
+        registrationService = new SectorAuthorityRegistrationService(config, monitor);
 
         // Register controllers
         registerControllers(context, manifestService, catalogService, searchService);

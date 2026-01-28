@@ -5,6 +5,8 @@
 package org.dsif.edc.extension.catalog.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.dsif.edc.extension.catalog.DsifConfiguration;
 import org.eclipse.edc.spi.monitor.Monitor;
 
@@ -13,6 +15,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.List;
 
 /**
  * Handles automatic registration with a DSIF Sector Authority on startup.
@@ -25,16 +28,13 @@ public class SectorAuthorityRegistrationService {
     private static final Duration TIMEOUT = Duration.ofSeconds(30);
 
     private final DsifConfiguration config;
-    private final DsifManifestService manifestService;
     private final Monitor monitor;
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
 
     public SectorAuthorityRegistrationService(DsifConfiguration config,
-                                               DsifManifestService manifestService,
                                                Monitor monitor) {
         this.config = config;
-        this.manifestService = manifestService;
         this.monitor = monitor;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(TIMEOUT)
@@ -99,8 +99,7 @@ public class SectorAuthorityRegistrationService {
         String registerUrl = saUrl + "/registerCatalog";
 
         try {
-            var connectionProfile = manifestService.buildConnectionProfile();
-            String json = objectMapper.writeValueAsString(connectionProfile);
+            String json = objectMapper.writeValueAsString(buildRegistrationPayload());
 
             var requestBuilder = HttpRequest.newBuilder()
                     .uri(URI.create(registerUrl))
@@ -127,6 +126,68 @@ public class SectorAuthorityRegistrationService {
         } catch (Exception e) {
             monitor.warning("Failed to register with Sector Authority: " + e.getMessage());
         }
+    }
+
+    /**
+     * Build the plain JSON registration payload expected by the SA.
+     */
+    private ObjectNode buildRegistrationPayload() {
+        ObjectNode root = objectMapper.createObjectNode();
+        root.put("catalogId", config.getCatalogId());
+        root.put("type", "ic");
+        root.put("sector", config.getCatalogSector());
+        root.put("description", config.getCatalogDescription());
+
+        // Endpoints (plain URL strings)
+        ObjectNode endpoints = objectMapper.createObjectNode();
+        endpoints.put("catalog", config.getCatalogUrl());
+        endpoints.put("dataset", config.getDatasetUrlTemplate());
+        endpoints.put("search", config.getSearchUrl());
+        endpoints.put("health", config.getHealthUrl());
+        root.set("endpoints", endpoints);
+
+        // Search template
+        root.put("searchTemplate", config.getSearchTemplate());
+
+        // Capabilities
+        ObjectNode capabilities = objectMapper.createObjectNode();
+
+        ObjectNode search = objectMapper.createObjectNode();
+        search.put("q", true);
+        ArrayNode filters = objectMapper.createArrayNode();
+        for (String f : List.of("type", "format", "publisher", "keyword")) {
+            filters.add(f);
+        }
+        search.set("filters", filters);
+        search.put("paging", true);
+        ArrayNode sort = objectMapper.createArrayNode();
+        for (String s : List.of("relevance", "recent", "title")) {
+            sort.add(s);
+        }
+        search.set("sort", sort);
+        capabilities.set("search", search);
+
+        ObjectNode catalog = objectMapper.createObjectNode();
+        catalog.put("pagination", true);
+        catalog.put("format", "application/ld+json");
+        capabilities.set("catalog", catalog);
+
+        ObjectNode auth = objectMapper.createObjectNode();
+        auth.put("scheme", config.getAuthScheme());
+        capabilities.set("auth", auth);
+
+        root.set("capabilities", capabilities);
+
+        // Conformance
+        ArrayNode conformsTo = objectMapper.createArrayNode();
+        conformsTo.add("https://www.w3.org/TR/vocab-dcat-3/");
+        conformsTo.add("https://extensions.ckan.org/extension/dcat/");
+        conformsTo.add("https://spec.dsif.dev/profiles/search/0.1");
+        root.set("conformsTo", conformsTo);
+
+        root.put("ttlSeconds", config.getTtlSeconds());
+
+        return root;
     }
 
     /**
