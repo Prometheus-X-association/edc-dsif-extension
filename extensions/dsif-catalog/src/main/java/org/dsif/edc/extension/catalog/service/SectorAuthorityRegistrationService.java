@@ -101,10 +101,13 @@ public class SectorAuthorityRegistrationService {
         try {
             String json = objectMapper.writeValueAsString(buildRegistrationPayload());
 
+            monitor.info("SA registration POST to: " + registerUrl);
+            monitor.info("SA registration payload: " + json);
+
             var requestBuilder = HttpRequest.newBuilder()
                     .uri(URI.create(registerUrl))
                     .timeout(TIMEOUT)
-                    .header("Content-Type", "application/ld+json");
+                    .header("Content-Type", "application/json");
 
             String apiKey = config.getSectorAuthorityApiKey();
             if (apiKey != null && !apiKey.isBlank()) {
