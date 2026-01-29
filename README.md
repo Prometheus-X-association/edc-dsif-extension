@@ -132,6 +132,8 @@ The DSIF endpoints will be available automatically:
 | `dsif.search.max.page.size` | Max search page size | `100` |
 | `dsif.search.default.page.size` | Default page size | `10` |
 | `dsif.auth.scheme` | Auth scheme (`none`, `apiKey`, `oauth2`) | `none` |
+| `dsif.participant.id` | Participant ID for negotiation metadata | `edc.participant.id` value |
+| `dsif.protocol.endpoint` | DSP protocol endpoint URL | `edc.dsp.callback.address` value |
 
 ### Example Configuration
 
@@ -280,15 +282,57 @@ Returns:
 
 EDC Assets are automatically mapped to DCAT Datasets/DataServices. For optimal results, include these properties on your assets:
 
-| EDC Property | DCAT Mapping | Required |
-|--------------|--------------|----------|
+| EDC Property | DCAT/DSIF Mapping | Required |
+|--------------|-------------------|----------|
 | `name` | `dct:title` | Yes |
 | `description` | `dct:description` | No |
 | `contenttype` | `dcat:mediaType` | Recommended |
 | `keywords` | `dcat:keyword` | No |
 | `publisher` | `dct:publisher` | Recommended |
+| `author` | `dct:creator` | No |
+| `rating` | `dsif:rating` | No |
 | `type` | `@type` (`dataset`/`service`) | No |
 | `endpointUrl` | `dcat:endpointURL` | For services |
+| *(auto)* | `edc:assetId` | Auto (asset ID) |
+
+### Contract & Policy Information
+
+When contract definitions and policies exist for an asset, the catalog automatically enriches each dataset with:
+
+- **`odrl:hasPolicy`**: The ODRL policy (permissions, prohibitions, obligations) from the contract's policy definition
+- **`edc:contractDefinitionId`**: The contract definition ID linking the asset to its policy
+- **`dsif:negotiation`**: DSP negotiation metadata including `participantId` and `protocolEndpoint`
+
+This enables downstream catalog consumers to inspect contract terms before initiating negotiation.
+
+Example enriched dataset output:
+
+```json
+{
+  "@id": "urn:dsif:afp-catalog:ds4go-fact-28",
+  "@type": "dcat:Dataset",
+  "dct:title": "Ouster of Venezuela's Maduro unleashes waves of misinformation online",
+  "dct:description": "After US special forces captured Venezuelan leader...",
+  "dcat:mediaType": "application/ld+json",
+  "edc:assetId": "ds4go-fact-28",
+  "dct:creator": "Bill MCCARTHY / AFP USA / AFP Colombia",
+  "dsif:rating": "AI-generated",
+  "odrl:hasPolicy": {
+    "@type": "odrl:Set",
+    "odrl:permission": [{"odrl:action": "use"}],
+    "odrl:prohibition": [],
+    "odrl:obligation": []
+  },
+  "edc:contractDefinitionId": "contract-ds4go-fact-28",
+  "dsif:negotiation": {
+    "dspace:participantId": "afp-participant",
+    "dspace:protocolEndpoint": "https://afp.connector-dev.startinblox.com/protocol"
+  },
+  "dsif:originCatalogId": "afp-catalog",
+  "dsif:federationPath": [],
+  "dsif:hopCount": 0
+}
+```
 
 ## Registering with a Sector Authority
 

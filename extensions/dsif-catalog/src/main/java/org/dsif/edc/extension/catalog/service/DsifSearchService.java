@@ -97,6 +97,7 @@ public class DsifSearchService {
 
         return SearchHit.builder()
                 .uri(buildAssetUri(asset.getId()))
+                .assetId(asset.getId())
                 .type(isService ? "service" : "dataset")
                 .title(getStringProp(props, "name", asset.getId()))
                 .publisher(getStringProp(props, "publisher", null))

@@ -5,18 +5,29 @@
 package org.dsif.edc.extension.catalog.service;
 
 import jakarta.json.Json;
+import jakarta.json.JsonArrayBuilder;
 import jakarta.json.JsonObject;
 import jakarta.json.JsonObjectBuilder;
 import org.dsif.edc.extension.catalog.DsifConfiguration;
 import org.eclipse.edc.connector.controlplane.asset.spi.domain.Asset;
 import org.eclipse.edc.connector.controlplane.asset.spi.index.AssetIndex;
-import org.eclipse.edc.connector.controlplane.catalog.spi.Catalog;
 import org.eclipse.edc.connector.controlplane.catalog.spi.Dataset;
 import org.eclipse.edc.connector.controlplane.catalog.spi.DatasetResolver;
+import org.eclipse.edc.connector.controlplane.contract.spi.offer.store.ContractDefinitionStore;
+import org.eclipse.edc.connector.controlplane.contract.spi.types.offer.ContractDefinition;
+import org.eclipse.edc.connector.controlplane.policy.spi.PolicyDefinition;
+import org.eclipse.edc.connector.controlplane.policy.spi.store.PolicyDefinitionStore;
 import org.eclipse.edc.participant.spi.ParticipantAgent;
 import org.eclipse.edc.participantcontext.spi.types.ParticipantContext;
+import org.eclipse.edc.policy.model.Duty;
+import org.eclipse.edc.policy.model.Permission;
+import org.eclipse.edc.policy.model.Policy;
+import org.eclipse.edc.policy.model.Prohibition;
+import org.eclipse.edc.policy.model.Rule;
+import org.eclipse.edc.spi.query.Criterion;
 import org.eclipse.edc.spi.query.QuerySpec;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -27,6 +38,9 @@ import java.util.stream.Collectors;
  * This service wraps EDC's catalog infrastructure and adds:
  * - Hydra pagination (DSIF requirement)
  * - DSIF provenance fields (originCatalogId, hopCount, federationPath)
+ * - Asset metadata (description, author, content type, rating)
+ * - ODRL policy information from ContractDefinitionStore/PolicyDefinitionStore
+ * - DSP negotiation endpoint metadata
  *
  * When no participant context is provided (e.g., anonymous catalog browsing),
  * falls back to using AssetIndex directly to return all available assets.
@@ -37,15 +51,25 @@ public class DsifCatalogService {
     private static final String DCT_NAMESPACE = "http://purl.org/dc/terms/";
     private static final String HYDRA_NAMESPACE = "http://www.w3.org/ns/hydra/core#";
     private static final String DSIF_NAMESPACE = "https://spec.dsif.dev/ns#";
+    private static final String ODRL_NAMESPACE = "http://www.w3.org/ns/odrl/2/";
+    private static final String EDC_NAMESPACE = "https://w3id.org/edc/v0.0.1/ns/";
+    private static final String DSPACE_NAMESPACE = "https://w3id.org/dspace/v0.8/";
+
+    private static final String EDC_ID_PROPERTY = "https://w3id.org/edc/v0.0.1/ns/id";
 
     private final DsifConfiguration config;
     private final DatasetResolver datasetResolver;
     private final AssetIndex assetIndex;
+    private final ContractDefinitionStore contractDefinitionStore;
+    private final PolicyDefinitionStore policyDefinitionStore;
 
-    public DsifCatalogService(DsifConfiguration config, DatasetResolver datasetResolver, AssetIndex assetIndex) {
+    public DsifCatalogService(DsifConfiguration config, DatasetResolver datasetResolver, AssetIndex assetIndex,
+                               ContractDefinitionStore contractDefinitionStore, PolicyDefinitionStore policyDefinitionStore) {
         this.config = config;
         this.datasetResolver = datasetResolver;
         this.assetIndex = assetIndex;
+        this.contractDefinitionStore = contractDefinitionStore;
+        this.policyDefinitionStore = policyDefinitionStore;
     }
 
     /**
@@ -87,8 +111,11 @@ public class DsifCatalogService {
 
         int totalPages = (int) Math.ceil((double) totalItems / pageSize);
 
+        // Build contract index for enrichment
+        Map<String, ContractDefinition> contractIndex = buildContractIndex();
+
         // Build DCAT catalog JSON-LD with Hydra pagination
-        return buildCatalogJsonLd(datasets, page, pageSize, (int) totalItems, totalPages);
+        return buildCatalogJsonLd(datasets, page, pageSize, (int) totalItems, totalPages, contractIndex);
     }
 
     /**
@@ -149,17 +176,52 @@ public class DsifCatalogService {
         if (dataset == null) {
             return null;
         }
-        return buildDatasetJsonLd(dataset);
+        Map<String, ContractDefinition> contractIndex = buildContractIndex();
+        return buildDatasetJsonLd(dataset, contractIndex);
+    }
+
+    /**
+     * Build an index mapping asset IDs to their contract definitions.
+     * Queries all contract definitions and extracts the target asset ID
+     * from the assetsSelector criteria.
+     */
+    private Map<String, ContractDefinition> buildContractIndex() {
+        Map<String, ContractDefinition> index = new HashMap<>();
+        contractDefinitionStore.findAll(QuerySpec.max()).forEach(cd -> {
+            String assetId = extractAssetIdFromSelector(cd.getAssetsSelector());
+            if (assetId != null) {
+                index.put(assetId, cd);
+            }
+        });
+        return index;
+    }
+
+    /**
+     * Extract the target asset ID from a contract definition's assetsSelector.
+     * Looks for a criterion with operandLeft = EDC ID property and operator = "=".
+     */
+    private String extractAssetIdFromSelector(List<Criterion> criteria) {
+        if (criteria == null) {
+            return null;
+        }
+        for (Criterion criterion : criteria) {
+            Object left = criterion.getOperandLeft();
+            if (EDC_ID_PROPERTY.equals(String.valueOf(left)) && "=".equals(criterion.getOperator())) {
+                return String.valueOf(criterion.getOperandRight());
+            }
+        }
+        return null;
     }
 
     private JsonObject buildCatalogJsonLd(List<Dataset> datasets, int page, int pageSize,
-                                           int totalItems, int totalPages) {
+                                           int totalItems, int totalPages,
+                                           Map<String, ContractDefinition> contractIndex) {
         var factory = Json.createBuilderFactory(Map.of());
 
         // Build datasets array with DSIF provenance
         var datasetsArray = Json.createArrayBuilder();
         for (Dataset dataset : datasets) {
-            datasetsArray.add(buildDatasetJsonLd(dataset));
+            datasetsArray.add(buildDatasetJsonLd(dataset, contractIndex));
         }
 
         // Build Hydra pagination view
@@ -180,7 +242,7 @@ public class DsifCatalogService {
                 .build();
     }
 
-    private JsonObject buildDatasetJsonLd(Dataset dataset) {
+    private JsonObject buildDatasetJsonLd(Dataset dataset, Map<String, ContractDefinition> contractIndex) {
         var factory = Json.createBuilderFactory(Map.of());
         JsonObjectBuilder builder = factory.createObjectBuilder()
                 .add("@id", buildDatasetUri(dataset.getId()))
@@ -190,20 +252,41 @@ public class DsifCatalogService {
         Map<String, Object> props = dataset.getProperties();
 
         // Title
-        Object title = props.getOrDefault("name", props.getOrDefault("dct:title", dataset.getId()));
-        builder.add("dct:title", String.valueOf(title));
+        String title = getProp(props, "name");
+        if (title == null) {
+            title = getProp(props, "dct:title");
+        }
+        builder.add("dct:title", title != null ? title : dataset.getId());
 
         // Description
-        Object description = props.get("description");
-        if (description == null) {
-            description = props.get("dct:description");
-        }
+        String description = getProp(props, "description");
         if (description != null) {
-            builder.add("dct:description", String.valueOf(description));
+            builder.add("dct:description", description);
+        }
+
+        // Content type
+        String contentType = getProp(props, "contenttype");
+        if (contentType != null) {
+            builder.add("dcat:mediaType", contentType);
+        }
+
+        // EDC Asset ID (the raw ID for contract negotiation)
+        builder.add("edc:assetId", dataset.getId());
+
+        // Author / Creator
+        String author = getProp(props, "author");
+        if (author != null) {
+            builder.add("dct:creator", author);
+        }
+
+        // Rating (DSIF-specific)
+        String rating = getProp(props, "rating");
+        if (rating != null) {
+            builder.add("dsif:rating", rating);
         }
 
         // Keywords
-        Object keywords = props.get("keywords");
+        Object keywords = getPropertyValue(props, "keywords");
         if (keywords == null) {
             keywords = props.get("dcat:keyword");
         }
@@ -237,12 +320,72 @@ public class DsifCatalogService {
             builder.add("dcat:distribution", distArray);
         }
 
+        // Contract and policy information
+        ContractDefinition contractDef = contractIndex.get(dataset.getId());
+        if (contractDef != null) {
+            // ODRL policy
+            PolicyDefinition policyDef = policyDefinitionStore.findById(contractDef.getContractPolicyId());
+            if (policyDef != null) {
+                builder.add("odrl:hasPolicy", buildOdrlPolicy(policyDef.getPolicy(), factory));
+            }
+
+            // Contract definition ID
+            builder.add("edc:contractDefinitionId", contractDef.getId());
+        }
+
+        // Negotiation metadata
+        builder.add("dsif:negotiation", factory.createObjectBuilder()
+                .add("dspace:participantId", config.getParticipantId())
+                .add("dspace:protocolEndpoint", config.getProtocolEndpoint()));
+
         // DSIF provenance (for IC, local data has hopCount=0)
         builder.add("dsif:originCatalogId", config.getCatalogId());
         builder.add("dsif:federationPath", Json.createArrayBuilder());
         builder.add("dsif:hopCount", 0);
 
         return builder.build();
+    }
+
+    /**
+     * Build an ODRL policy JSON-LD object from an EDC Policy model.
+     */
+    private JsonObject buildOdrlPolicy(Policy policy, jakarta.json.JsonBuilderFactory factory) {
+        JsonObjectBuilder policyBuilder = factory.createObjectBuilder()
+                .add("@type", "odrl:Set");
+
+        // Permissions
+        JsonArrayBuilder permissions = Json.createArrayBuilder();
+        for (Permission perm : policy.getPermissions()) {
+            permissions.add(buildOdrlRule(perm, factory));
+        }
+        policyBuilder.add("odrl:permission", permissions);
+
+        // Prohibitions
+        JsonArrayBuilder prohibitions = Json.createArrayBuilder();
+        for (Prohibition prohibition : policy.getProhibitions()) {
+            prohibitions.add(buildOdrlRule(prohibition, factory));
+        }
+        policyBuilder.add("odrl:prohibition", prohibitions);
+
+        // Obligations
+        JsonArrayBuilder obligations = Json.createArrayBuilder();
+        for (Duty duty : policy.getObligations()) {
+            obligations.add(buildOdrlRule(duty, factory));
+        }
+        policyBuilder.add("odrl:obligation", obligations);
+
+        return policyBuilder.build();
+    }
+
+    /**
+     * Build a JSON-LD representation of an ODRL rule (permission, prohibition, or duty).
+     */
+    private JsonObject buildOdrlRule(Rule rule, jakarta.json.JsonBuilderFactory factory) {
+        JsonObjectBuilder ruleBuilder = factory.createObjectBuilder();
+        if (rule.getAction() != null && rule.getAction().getType() != null) {
+            ruleBuilder.add("odrl:action", rule.getAction().getType());
+        }
+        return ruleBuilder.build();
     }
 
     private JsonObject buildHydraView(jakarta.json.JsonBuilderFactory factory,
@@ -276,6 +419,9 @@ public class DsifCatalogService {
                 .add("dct", DCT_NAMESPACE)
                 .add("hydra", HYDRA_NAMESPACE)
                 .add("dsif", DSIF_NAMESPACE)
+                .add("odrl", ODRL_NAMESPACE)
+                .add("edc", EDC_NAMESPACE)
+                .add("dspace", DSPACE_NAMESPACE)
                 .build();
     }
 
@@ -284,13 +430,48 @@ public class DsifCatalogService {
     }
 
     private String determineDatasetType(Dataset dataset) {
-        Object type = dataset.getProperties().get("type");
+        String type = getProp(dataset.getProperties(), "type");
         if (type != null) {
-            String typeStr = String.valueOf(type).toLowerCase();
+            String typeStr = type.toLowerCase();
             if ("service".equals(typeStr) || "dataservice".equals(typeStr)) {
                 return "dcat:DataService";
             }
         }
         return "dcat:Dataset";
+    }
+
+    /**
+     * Look up a property value by short key, trying multiple key formats.
+     * EDC stores properties with full namespace keys (e.g., "https://w3id.org/edc/v0.0.1/ns/name")
+     * but they may also appear as short keys ("name") depending on the source.
+     *
+     * @return the string value or null if not found
+     */
+    private String getProp(Map<String, Object> props, String key) {
+        Object value = getPropertyValue(props, key);
+        return value != null ? value.toString() : null;
+    }
+
+    /**
+     * Look up a raw property value by short key, trying multiple key formats.
+     */
+    private Object getPropertyValue(Map<String, Object> props, String key) {
+        // Try plain key first
+        Object value = props.get(key);
+        if (value != null) {
+            return value;
+        }
+        // Try EDC full namespace
+        value = props.get(EDC_NAMESPACE + key);
+        if (value != null) {
+            return value;
+        }
+        // Try edc: prefix
+        value = props.get("edc:" + key);
+        if (value != null) {
+            return value;
+        }
+        // Try legacy asset:prop: prefix
+        return props.get("asset:prop:" + key);
     }
 }

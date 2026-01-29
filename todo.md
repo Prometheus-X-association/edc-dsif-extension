@@ -207,13 +207,27 @@ public SearchResult search(SearchParams params) {
 - [x] Maven coordinates for dependencies (instead of project references)
 - [x] Anonymous catalog browsing (AssetIndex fallback when no participant context)
 
+### Catalog Enrichment (Completed)
+
+- [x] Inject `ContractDefinitionStore` and `PolicyDefinitionStore`
+- [x] Add `dsif.participant.id` and `dsif.protocol.endpoint` configuration
+- [x] Expose `edc:assetId` on each dataset
+- [x] Map `author` → `dct:creator`, `rating` → `dsif:rating`, `contenttype` → `dcat:mediaType`
+- [x] Build contract index and resolve ODRL policies
+- [x] Embed `odrl:hasPolicy` with permission/prohibition/obligation arrays
+- [x] Add `edc:contractDefinitionId` and `dsif:negotiation` to datasets
+- [x] Add `odrl`, `edc`, `dspace` namespace prefixes to JSON-LD context
+- [x] Add `assetId` to search hit results
+
 ### Remaining
 
 - [ ] Unit tests
 - [ ] Integration tests
 - [ ] SHACL validation for DCAT output
 - [ ] JSON Schema validation for manifests
-- [ ] Improve property mapping in catalog (use `name` property for title)
+- [ ] Temporal/spatial constraint serialization in ODRL output
+- [ ] DCAT Distribution from DataAddress
+- [ ] Full ODRL 2.2 compliance (constraint details, logical operators)
 
 ## Integration with edc-connector
 

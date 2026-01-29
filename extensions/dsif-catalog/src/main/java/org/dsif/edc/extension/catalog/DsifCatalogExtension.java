@@ -8,6 +8,8 @@ import org.dsif.edc.extension.catalog.controller.*;
 import org.dsif.edc.extension.catalog.service.*;
 import org.eclipse.edc.connector.controlplane.asset.spi.index.AssetIndex;
 import org.eclipse.edc.connector.controlplane.catalog.spi.DatasetResolver;
+import org.eclipse.edc.connector.controlplane.contract.spi.offer.store.ContractDefinitionStore;
+import org.eclipse.edc.connector.controlplane.policy.spi.store.PolicyDefinitionStore;
 import org.eclipse.edc.runtime.metamodel.annotation.Extension;
 import org.eclipse.edc.runtime.metamodel.annotation.Inject;
 import org.eclipse.edc.spi.system.ServiceExtension;
@@ -50,6 +52,12 @@ public class DsifCatalogExtension implements ServiceExtension {
     @Inject
     private DatasetResolver datasetResolver;
 
+    @Inject
+    private ContractDefinitionStore contractDefinitionStore;
+
+    @Inject
+    private PolicyDefinitionStore policyDefinitionStore;
+
     private DsifConfiguration config;
     private DsifHealthService healthService;
     private SectorAuthorityRegistrationService registrationService;
@@ -79,7 +87,7 @@ public class DsifCatalogExtension implements ServiceExtension {
         // - DsifSearchService: uses AssetIndex with QuerySpec, transforms to DSIF format
         var manifestService = new DsifManifestService(config);
         healthService = new DsifHealthService(config, VERSION);
-        var catalogService = new DsifCatalogService(config, datasetResolver, assetIndex);
+        var catalogService = new DsifCatalogService(config, datasetResolver, assetIndex, contractDefinitionStore, policyDefinitionStore);
         var searchService = new DsifSearchService(config, assetIndex);
 
         // Initialize SA registration service

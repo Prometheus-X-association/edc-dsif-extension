@@ -29,6 +29,8 @@ public class DsifConfiguration {
     public static final String AUTH_SCHEME = "dsif.auth.scheme";
     public static final String SECTOR_AUTHORITY_URL = "dsif.sector.authority.url";
     public static final String SECTOR_AUTHORITY_API_KEY = "dsif.sector.authority.api.key";
+    public static final String PARTICIPANT_ID = "dsif.participant.id";
+    public static final String PROTOCOL_ENDPOINT = "dsif.protocol.endpoint";
 
     // Default values
     public static final String DEFAULT_DSIF_VERSION = "0.1.0";
@@ -54,6 +56,8 @@ public class DsifConfiguration {
     private final String authScheme;
     private final String sectorAuthorityUrl;
     private final String sectorAuthorityApiKey;
+    private final String participantId;
+    private final String protocolEndpoint;
 
     public DsifConfiguration(ServiceExtensionContext context) {
         this.catalogId = context.getSetting(CATALOG_ID, context.getComponentId());
@@ -73,6 +77,8 @@ public class DsifConfiguration {
         this.authScheme = context.getSetting(AUTH_SCHEME, DEFAULT_AUTH_SCHEME);
         this.sectorAuthorityUrl = context.getSetting(SECTOR_AUTHORITY_URL, "");
         this.sectorAuthorityApiKey = context.getSetting(SECTOR_AUTHORITY_API_KEY, "");
+        this.participantId = context.getSetting(PARTICIPANT_ID, context.getSetting("edc.participant.id", catalogId));
+        this.protocolEndpoint = context.getSetting(PROTOCOL_ENDPOINT, context.getSetting("edc.dsp.callback.address", baseUrl + "/protocol"));
     }
 
     private String detectBaseUrl(ServiceExtensionContext context) {
@@ -129,4 +135,6 @@ public class DsifConfiguration {
     public String getAuthScheme() { return authScheme; }
     public String getSectorAuthorityUrl() { return sectorAuthorityUrl; }
     public String getSectorAuthorityApiKey() { return sectorAuthorityApiKey; }
+    public String getParticipantId() { return participantId; }
+    public String getProtocolEndpoint() { return protocolEndpoint; }
 }
