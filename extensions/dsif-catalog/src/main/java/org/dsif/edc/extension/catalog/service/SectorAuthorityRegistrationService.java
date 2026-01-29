@@ -15,6 +15,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -141,7 +142,7 @@ public class SectorAuthorityRegistrationService {
         root.put("sector", config.getCatalogSector());
         root.put("description", config.getCatalogDescription());
 
-        // Endpoints (plain URL strings)
+        // Endpoints
         ObjectNode endpoints = objectMapper.createObjectNode();
         endpoints.put("catalog", config.getCatalogUrl());
         endpoints.put("dataset", config.getDatasetUrlTemplate());
@@ -149,45 +150,56 @@ public class SectorAuthorityRegistrationService {
         endpoints.put("health", config.getHealthUrl());
         root.set("endpoints", endpoints);
 
-        // Search template
-        root.put("searchTemplate", config.getSearchTemplate());
-
-        // Capabilities
-        ObjectNode capabilities = objectMapper.createObjectNode();
-
-        ObjectNode search = objectMapper.createObjectNode();
-        search.put("q", true);
-        ArrayNode filters = objectMapper.createArrayNode();
-        for (String f : List.of("type", "format", "publisher", "keyword")) {
-            filters.add(f);
-        }
-        search.set("filters", filters);
-        search.put("paging", true);
-        ArrayNode sort = objectMapper.createArrayNode();
-        for (String s : List.of("relevance", "recent", "title")) {
-            sort.add(s);
-        }
-        search.set("sort", sort);
-        capabilities.set("search", search);
-
-        ObjectNode catalog = objectMapper.createObjectNode();
-        catalog.put("pagination", true);
-        catalog.put("format", "application/ld+json");
-        capabilities.set("catalog", catalog);
-
-        ObjectNode auth = objectMapper.createObjectNode();
-        auth.put("scheme", config.getAuthScheme());
-        capabilities.set("auth", auth);
-
-        root.set("capabilities", capabilities);
-
         // Conformance
         ArrayNode conformsTo = objectMapper.createArrayNode();
         conformsTo.add("https://www.w3.org/TR/vocab-dcat-3/");
         conformsTo.add("https://extensions.ckan.org/extension/dcat/");
-        conformsTo.add("https://spec.dsif.dev/profiles/search/0.1");
         root.set("conformsTo", conformsTo);
 
+        // Capabilities
+        ObjectNode capabilities = objectMapper.createObjectNode();
+
+        ObjectNode searchCap = objectMapper.createObjectNode();
+        searchCap.put("q", true);
+        ArrayNode filters = objectMapper.createArrayNode();
+        for (String f : List.of("type", "format", "publisher", "keyword")) {
+            filters.add(f);
+        }
+        searchCap.set("filters", filters);
+        searchCap.put("paging", true);
+        ArrayNode sort = objectMapper.createArrayNode();
+        for (String s : List.of("relevance", "recent", "title")) {
+            sort.add(s);
+        }
+        searchCap.set("sort", sort);
+        capabilities.set("search", searchCap);
+
+        ObjectNode catalogCap = objectMapper.createObjectNode();
+        catalogCap.put("pagination", true);
+        catalogCap.put("format", "application/ld+json");
+        capabilities.set("catalog", catalogCap);
+
+        ObjectNode authCap = objectMapper.createObjectNode();
+        authCap.put("scheme", config.getAuthScheme());
+        capabilities.set("auth", authCap);
+
+        root.set("capabilities", capabilities);
+
+        // Search template and parameters
+        root.put("searchTemplate", config.getSearchTemplate());
+        ArrayNode searchParameters = objectMapper.createArrayNode();
+        for (String p : List.of("q", "keyword", "type", "format", "page", "pageSize", "sort")) {
+            searchParameters.add(p);
+        }
+        root.set("searchParameters", searchParameters);
+
+        // Auth
+        ObjectNode auth = objectMapper.createObjectNode();
+        auth.put("scheme", config.getAuthScheme());
+        root.set("auth", auth);
+
+        // Timestamps and TTL
+        root.put("lastUpdated", Instant.now().toString());
         root.put("ttlSeconds", config.getTtlSeconds());
 
         return root;
