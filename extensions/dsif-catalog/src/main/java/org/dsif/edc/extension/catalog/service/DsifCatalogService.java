@@ -270,8 +270,8 @@ public class DsifCatalogService {
             builder.add("dcat:mediaType", contentType);
         }
 
-        // EDC Asset ID (the raw ID for contract negotiation)
-        builder.add("edc:assetId", dataset.getId());
+        // DSP Asset ID (the raw ID for contract negotiation)
+        builder.add("dspace:assetId", dataset.getId());
 
         // Author / Creator
         String author = getProp(props, "author");
@@ -283,6 +283,88 @@ public class DsifCatalogService {
         String rating = getProp(props, "rating");
         if (rating != null) {
             builder.add("dsif:rating", rating);
+        }
+
+        // Pricing (DSIF-specific) - extract from asset properties
+        Object pricing = getPropertyValue(props, "dsif:pricing");
+        if (pricing == null) {
+            pricing = props.get("https://spec.dsif.dev/ns#pricing");
+        }
+        if (pricing instanceof Map) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> pricingMap = (Map<String, Object>) pricing;
+            var pricingBuilder = factory.createObjectBuilder();
+
+            // Extract pricing fields (unwrap JSON-LD expanded values)
+            Object cost = getPricingField(pricingMap, "costPerAPICall");
+            if (cost != null) {
+                Object unwrapped = unwrapJsonLdValue(cost);
+                if (unwrapped instanceof Number) {
+                    pricingBuilder.add("dsif:costPerAPICall", ((Number) unwrapped).doubleValue());
+                } else {
+                    try {
+                        pricingBuilder.add("dsif:costPerAPICall", Double.parseDouble(String.valueOf(unwrapped)));
+                    } catch (NumberFormatException e) {
+                        pricingBuilder.add("dsif:costPerAPICall", String.valueOf(unwrapped));
+                    }
+                }
+            }
+
+            Object fee = getPricingField(pricingMap, "setupFee");
+            if (fee != null) {
+                Object unwrapped = unwrapJsonLdValue(fee);
+                if (unwrapped instanceof Number) {
+                    pricingBuilder.add("dsif:setupFee", ((Number) unwrapped).doubleValue());
+                } else {
+                    try {
+                        pricingBuilder.add("dsif:setupFee", Double.parseDouble(String.valueOf(unwrapped)));
+                    } catch (NumberFormatException e) {
+                        pricingBuilder.add("dsif:setupFee", String.valueOf(unwrapped));
+                    }
+                }
+            }
+
+            Object period = getPricingField(pricingMap, "billingPeriod");
+            if (period != null) {
+                pricingBuilder.add("dsif:billingPeriod", String.valueOf(unwrapJsonLdValue(period)));
+            }
+
+            Object currency = getPricingField(pricingMap, "currency");
+            if (currency != null) {
+                pricingBuilder.add("dsif:currency", String.valueOf(unwrapJsonLdValue(currency)));
+            }
+
+            Object desc = getPricingField(pricingMap, "description");
+            if (desc != null) {
+                pricingBuilder.add("dsif:description", String.valueOf(unwrapJsonLdValue(desc)));
+            }
+
+            builder.add("dsif:pricing", pricingBuilder);
+        }
+
+        // Preview links (DSIF-specific) - links to sample/preview content
+        Object previewLinks = getPropertyValue(props, "previewLinks");
+        if (previewLinks == null) {
+            previewLinks = props.get("dsif:previewLinks");
+        }
+        if (previewLinks == null) {
+            previewLinks = props.get(DSIF_NAMESPACE + "previewLinks");
+        }
+        if (previewLinks != null) {
+            Object unwrapped = unwrapJsonLdValue(previewLinks);
+            String linksStr = String.valueOf(unwrapped);
+            // Split comma-separated links into array
+            String[] links = linksStr.split("\\s*,\\s*");
+            if (links.length > 0) {
+                var linksArray = Json.createArrayBuilder();
+                for (String link : links) {
+                    String trimmed = link.trim();
+                    if (!trimmed.isEmpty()) {
+                        linksArray.add(factory.createObjectBuilder().add("@id", trimmed));
+                    }
+                }
+                builder.add("dsif:previewLinks", linksArray);
+            }
         }
 
         // Keywords
@@ -473,5 +555,54 @@ public class DsifCatalogService {
         }
         // Try legacy asset:prop: prefix
         return props.get("asset:prop:" + key);
+    }
+
+    /**
+     * Get a pricing field value from a pricing map, trying both short and full namespace keys.
+     */
+    private Object getPricingField(Map<String, Object> pricingMap, String fieldName) {
+        Object value = pricingMap.get("dsif:" + fieldName);
+        if (value != null) return value;
+        value = pricingMap.get(DSIF_NAMESPACE + fieldName);
+        if (value != null) return value;
+        return pricingMap.get(fieldName);
+    }
+
+    /**
+     * Unwrap JSON-LD expanded value format.
+     * JSON-LD expansion can produce values like:
+     * - [{@value=0.1}] (list with value object)
+     * - {value=0.1} (map with @value key)
+     * - 0.1 (plain value)
+     *
+     * @param value the potentially wrapped value
+     * @return the unwrapped value
+     */
+    @SuppressWarnings("unchecked")
+    private Object unwrapJsonLdValue(Object value) {
+        if (value == null) {
+            return null;
+        }
+        // Handle list wrapper: [{@value=X}]
+        if (value instanceof List) {
+            List<?> list = (List<?>) value;
+            if (!list.isEmpty()) {
+                return unwrapJsonLdValue(list.get(0));
+            }
+            return null;
+        }
+        // Handle map wrapper: {@value=X}
+        if (value instanceof Map) {
+            Map<String, Object> map = (Map<String, Object>) value;
+            if (map.containsKey("@value")) {
+                return map.get("@value");
+            }
+            // EDC sometimes uses "value" without @
+            if (map.containsKey("value")) {
+                return map.get("value");
+            }
+        }
+        // Return as-is if already a plain value
+        return value;
     }
 }

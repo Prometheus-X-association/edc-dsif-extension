@@ -61,7 +61,7 @@ public class DsifConfiguration {
 
     public DsifConfiguration(ServiceExtensionContext context) {
         this.catalogId = context.getSetting(CATALOG_ID, context.getComponentId());
-        this.catalogTitle = context.getSetting(CATALOG_TITLE, "EDC Catalog - " + catalogId);
+        this.catalogTitle = context.getSetting(CATALOG_TITLE, "EDC Catalog - " + catalogId + " (TEMS)");
         this.catalogDescription = context.getSetting(CATALOG_DESCRIPTION, "");
         this.catalogSector = context.getSetting(CATALOG_SECTOR, "general");
         this.publisherId = context.getSetting(PUBLISHER_ID, "did:web:" + catalogId);

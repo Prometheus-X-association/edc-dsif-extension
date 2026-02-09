@@ -40,6 +40,9 @@ public class SearchHit {
     @JsonProperty("provenance")
     private Provenance provenance;
 
+    @JsonProperty("pricingTier")
+    private String pricingTier;
+
     public SearchHit() {}
 
     public static Builder builder() {
@@ -94,6 +97,11 @@ public class SearchHit {
             return this;
         }
 
+        public Builder pricingTier(String pricingTier) {
+            hit.pricingTier = pricingTier;
+            return this;
+        }
+
         public SearchHit build() {
             return hit;
         }
@@ -118,4 +126,6 @@ public class SearchHit {
     public void setFormats(List<String> formats) { this.formats = formats; }
     public Provenance getProvenance() { return provenance; }
     public void setProvenance(Provenance provenance) { this.provenance = provenance; }
+    public String getPricingTier() { return pricingTier; }
+    public void setPricingTier(String pricingTier) { this.pricingTier = pricingTier; }
 }

@@ -105,6 +105,7 @@ public class DsifSearchService {
                 .keywords(parseKeywords(props))
                 .formats(parseFormats(props))
                 .provenance(Provenance.local(config.getCatalogId()))
+                .pricingTier(getStringProp(props, "pricingTier", null))
                 .build();
     }
 
