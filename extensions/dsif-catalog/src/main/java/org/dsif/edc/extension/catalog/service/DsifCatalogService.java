@@ -19,7 +19,11 @@ import org.eclipse.edc.connector.controlplane.policy.spi.PolicyDefinition;
 import org.eclipse.edc.connector.controlplane.policy.spi.store.PolicyDefinitionStore;
 import org.eclipse.edc.participant.spi.ParticipantAgent;
 import org.eclipse.edc.participantcontext.spi.types.ParticipantContext;
+import org.eclipse.edc.policy.model.AtomicConstraint;
+import org.eclipse.edc.policy.model.Constraint;
+import org.eclipse.edc.policy.model.Expression;
 import org.eclipse.edc.policy.model.Duty;
+import org.eclipse.edc.policy.model.MultiplicityConstraint;
 import org.eclipse.edc.policy.model.Permission;
 import org.eclipse.edc.policy.model.Policy;
 import org.eclipse.edc.policy.model.Prohibition;
@@ -409,6 +413,14 @@ public class DsifCatalogService {
             PolicyDefinition policyDef = policyDefinitionStore.findById(contractDef.getContractPolicyId());
             if (policyDef != null) {
                 builder.add("odrl:hasPolicy", buildOdrlPolicy(policyDef.getPolicy(), factory));
+
+                // Extract pricing from policy duties if not already set from asset properties
+                if (pricing == null) {
+                    var policyPricing = extractPricingFromPolicy(policyDef.getPolicy(), factory);
+                    if (policyPricing != null) {
+                        builder.add("dsif:pricing", policyPricing);
+                    }
+                }
             }
 
             // Contract definition ID
@@ -467,7 +479,128 @@ public class DsifCatalogService {
         if (rule.getAction() != null && rule.getAction().getType() != null) {
             ruleBuilder.add("odrl:action", rule.getAction().getType());
         }
+
+        // Add constraints
+        if (!rule.getConstraints().isEmpty()) {
+            var constraintArray = Json.createArrayBuilder();
+            for (Constraint constraint : rule.getConstraints()) {
+                var constraintJson = buildConstraintJsonLd(constraint, factory);
+                if (constraintJson != null) {
+                    constraintArray.add(constraintJson);
+                }
+            }
+            ruleBuilder.add("odrl:constraint", constraintArray);
+        }
+
+        // Add duties for permissions
+        if (rule instanceof Permission permission && !permission.getDuties().isEmpty()) {
+            var dutyArray = Json.createArrayBuilder();
+            for (Duty duty : permission.getDuties()) {
+                dutyArray.add(buildOdrlRule(duty, factory));
+            }
+            ruleBuilder.add("odrl:duty", dutyArray);
+        }
+
         return ruleBuilder.build();
+    }
+
+    /**
+     * Build a JSON-LD representation of a constraint.
+     */
+    private JsonObject buildConstraintJsonLd(Constraint constraint, jakarta.json.JsonBuilderFactory factory) {
+        if (constraint instanceof AtomicConstraint atomic) {
+            var leftValue = atomic.getLeftExpression().accept(s -> s.getValue().toString());
+            var rightValue = atomic.getRightExpression().accept(s -> s.getValue());
+            var builder = factory.createObjectBuilder()
+                    .add("odrl:leftOperand", leftValue)
+                    .add("odrl:operator", atomic.getOperator().name().toLowerCase())
+                    .add("odrl:rightOperand", String.valueOf(rightValue));
+            return builder.build();
+        } else if (constraint instanceof MultiplicityConstraint multi) {
+            var innerArray = Json.createArrayBuilder();
+            for (Constraint inner : multi.getConstraints()) {
+                var innerJson = buildConstraintJsonLd(inner, factory);
+                if (innerJson != null) {
+                    innerArray.add(innerJson);
+                }
+            }
+            var builder = factory.createObjectBuilder()
+                    .add("@type", "odrl:LogicalConstraint")
+                    .add("odrl:and", innerArray);
+            return builder.build();
+        }
+        return null;
+    }
+
+    /**
+     * Extract DSIF pricing information from policy duties.
+     * Looks for duties with odrl:compensate action and dsif: namespace constraints.
+     */
+    private JsonObject extractPricingFromPolicy(Policy policy, jakarta.json.JsonBuilderFactory factory) {
+        // Check duties on permissions
+        for (Permission permission : policy.getPermissions()) {
+            for (Duty duty : permission.getDuties()) {
+                var pricing = extractPricingFromDuty(duty, factory);
+                if (pricing != null) return pricing;
+            }
+        }
+        // Check top-level obligations
+        for (Duty duty : policy.getObligations()) {
+            var pricing = extractPricingFromDuty(duty, factory);
+            if (pricing != null) return pricing;
+        }
+        return null;
+    }
+
+    /**
+     * Extract pricing fields from a single duty's constraints.
+     */
+    private JsonObject extractPricingFromDuty(Duty duty, jakarta.json.JsonBuilderFactory factory) {
+        var pricingBuilder = factory.createObjectBuilder();
+        boolean hasPricing = false;
+
+        for (Constraint constraint : duty.getConstraints()) {
+            if (constraint instanceof AtomicConstraint atomic) {
+                var leftOperand = atomic.getLeftExpression().accept(s -> s.getValue().toString());
+                var rightValue = atomic.getRightExpression().accept((Expression.Visitor<String>) s -> String.valueOf(s.getValue()));
+                var field = extractDsifField(leftOperand);
+                if (field != null) {
+                    hasPricing = true;
+                    addPricingField(pricingBuilder, field, rightValue);
+                }
+            }
+        }
+
+        return hasPricing ? pricingBuilder.build() : null;
+    }
+
+    /**
+     * Extract the DSIF field name from a fully-qualified or prefixed left operand.
+     */
+    private String extractDsifField(String leftOperand) {
+        if (leftOperand.startsWith(DSIF_NAMESPACE)) {
+            return leftOperand.substring(DSIF_NAMESPACE.length());
+        }
+        if (leftOperand.startsWith("dsif:")) {
+            return leftOperand.substring(5);
+        }
+        return null;
+    }
+
+    /**
+     * Add a pricing field to the builder, attempting numeric conversion for cost fields.
+     */
+    private void addPricingField(JsonObjectBuilder builder, String field, String value) {
+        switch (field) {
+            case "costPerAPICall", "setupFee" -> {
+                try {
+                    builder.add("dsif:" + field, Double.parseDouble(value));
+                } catch (NumberFormatException e) {
+                    builder.add("dsif:" + field, value);
+                }
+            }
+            default -> builder.add("dsif:" + field, value);
+        }
     }
 
     private JsonObject buildHydraView(jakarta.json.JsonBuilderFactory factory,

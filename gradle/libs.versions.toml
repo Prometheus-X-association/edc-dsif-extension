@@ -53,6 +53,7 @@ edc-spi-catalog = { module = "org.eclipse.edc:catalog-spi", version.ref = "edc" 
 edc-spi-asset = { module = "org.eclipse.edc:asset-spi", version.ref = "edc" }
 edc-spi-contract = { module = "org.eclipse.edc:contract-spi", version.ref = "edc" }
 edc-spi-policy = { module = "org.eclipse.edc:policy-spi", version.ref = "edc" }
+edc-spi-policy-engine = { module = "org.eclipse.edc:policy-engine-spi", version.ref = "edc" }
 
 # EDC BOM for test connector
 edc-bom-controlplane = { module = "org.eclipse.edc:controlplane-base-bom", version.ref = "edc" }

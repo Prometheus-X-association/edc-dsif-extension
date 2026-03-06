@@ -27,6 +27,7 @@ dependencies {
     api(libs.edc.spi.asset)
     api(libs.edc.spi.contract)
     api(libs.edc.spi.policy)
+    api(libs.edc.spi.policy.engine)
 
     // Jakarta RS for REST endpoints
     implementation(libs.jakarta.rsApi)

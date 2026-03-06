@@ -5,16 +5,27 @@
 package org.dsif.edc.extension.catalog;
 
 import org.dsif.edc.extension.catalog.controller.*;
+import org.dsif.edc.extension.catalog.policy.DsifPricingConstraintFunction;
+import org.dsif.edc.extension.catalog.policy.OdrlDateTimeConstraintFunction;
 import org.dsif.edc.extension.catalog.service.*;
 import org.eclipse.edc.connector.controlplane.asset.spi.index.AssetIndex;
 import org.eclipse.edc.connector.controlplane.catalog.spi.DatasetResolver;
 import org.eclipse.edc.connector.controlplane.contract.spi.offer.store.ContractDefinitionStore;
 import org.eclipse.edc.connector.controlplane.policy.spi.store.PolicyDefinitionStore;
+import org.eclipse.edc.connector.controlplane.catalog.spi.policy.CatalogPolicyContext;
+import org.eclipse.edc.connector.controlplane.contract.spi.policy.ContractNegotiationPolicyContext;
+import org.eclipse.edc.policy.engine.spi.PolicyEngine;
+import org.eclipse.edc.policy.engine.spi.RuleBindingRegistry;
+import org.eclipse.edc.policy.model.Duty;
+import org.eclipse.edc.policy.model.Permission;
 import org.eclipse.edc.runtime.metamodel.annotation.Extension;
 import org.eclipse.edc.runtime.metamodel.annotation.Inject;
 import org.eclipse.edc.spi.system.ServiceExtension;
 import org.eclipse.edc.spi.system.ServiceExtensionContext;
 import org.eclipse.edc.web.spi.WebService;
+
+import static org.eclipse.edc.connector.controlplane.catalog.spi.policy.CatalogPolicyContext.CATALOG_SCOPE;
+import static org.eclipse.edc.connector.controlplane.contract.spi.policy.ContractNegotiationPolicyContext.NEGOTIATION_SCOPE;
 
 /**
  * DSIF Independent Catalog Extension for Eclipse Dataspace Connector.
@@ -58,6 +69,12 @@ public class DsifCatalogExtension implements ServiceExtension {
     @Inject
     private PolicyDefinitionStore policyDefinitionStore;
 
+    @Inject
+    private PolicyEngine policyEngine;
+
+    @Inject
+    private RuleBindingRegistry ruleBindingRegistry;
+
     private DsifConfiguration config;
     private DsifHealthService healthService;
     private SectorAuthorityRegistrationService registrationService;
@@ -79,6 +96,9 @@ public class DsifCatalogExtension implements ServiceExtension {
         monitor.info("DSIF Catalog ID: " + config.getCatalogId());
         monitor.info("DSIF Catalog Sector: " + config.getCatalogSector());
         monitor.info("DSIF Base URL: " + config.getBaseUrl());
+
+        // Register DSIF policy functions (pricing + ODRL dateTime)
+        registerDsifPolicyFunctions();
 
         // Initialize services
         // - DsifManifestService: builds DSIF-specific manifests
@@ -122,6 +142,26 @@ public class DsifCatalogExtension implements ServiceExtension {
         // Register search endpoint (uses AssetIndex with QuerySpec)
         var searchController = new DsifSearchController(searchService, config);
         webService.registerResource(searchController);
+    }
+
+    private void registerDsifPolicyFunctions() {
+        // --- DSIF Pricing (descriptive, always-pass) ---
+        // Bind the odrl:compensate action to catalog and negotiation scopes
+        ruleBindingRegistry.bind("odrl:compensate", CATALOG_SCOPE);
+        ruleBindingRegistry.bind("odrl:compensate", NEGOTIATION_SCOPE);
+        ruleBindingRegistry.bind("http://www.w3.org/ns/odrl/2/compensate", CATALOG_SCOPE);
+        ruleBindingRegistry.bind("http://www.w3.org/ns/odrl/2/compensate", NEGOTIATION_SCOPE);
+
+        // Register dynamic function for all dsif: namespace constraints (always passes)
+        policyEngine.registerFunction(CatalogPolicyContext.class, Duty.class, new DsifPricingConstraintFunction<>());
+        policyEngine.registerFunction(ContractNegotiationPolicyContext.class, Duty.class, new DsifPricingConstraintFunction<>());
+
+        // --- ODRL dateTime (enforced, compares current time to ISO-8601 bound) ---
+        var dateTimeKey = OdrlDateTimeConstraintFunction.ODRL_DATETIME_KEY;
+        ruleBindingRegistry.bind(dateTimeKey, CATALOG_SCOPE);
+        ruleBindingRegistry.bind(dateTimeKey, NEGOTIATION_SCOPE);
+        policyEngine.registerFunction(CatalogPolicyContext.class, Permission.class, dateTimeKey, new OdrlDateTimeConstraintFunction<>());
+        policyEngine.registerFunction(ContractNegotiationPolicyContext.class, Permission.class, dateTimeKey, new OdrlDateTimeConstraintFunction<>());
     }
 
     @Override
