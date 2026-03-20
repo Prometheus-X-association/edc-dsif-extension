@@ -18,6 +18,8 @@ import org.eclipse.edc.policy.engine.spi.PolicyEngine;
 import org.eclipse.edc.policy.engine.spi.RuleBindingRegistry;
 import org.eclipse.edc.policy.model.Duty;
 import org.eclipse.edc.policy.model.Permission;
+
+import java.util.Set;
 import org.eclipse.edc.runtime.metamodel.annotation.Extension;
 import org.eclipse.edc.runtime.metamodel.annotation.Inject;
 import org.eclipse.edc.spi.system.ServiceExtension;
@@ -151,6 +153,14 @@ public class DsifCatalogExtension implements ServiceExtension {
         ruleBindingRegistry.bind("odrl:compensate", NEGOTIATION_SCOPE);
         ruleBindingRegistry.bind("http://www.w3.org/ns/odrl/2/compensate", CATALOG_SCOPE);
         ruleBindingRegistry.bind("http://www.w3.org/ns/odrl/2/compensate", NEGOTIATION_SCOPE);
+
+        // Dynamic scope binding for all dsif: namespace leftOperands (expanded or compact prefix)
+        ruleBindingRegistry.dynamicBind(key -> {
+            if (key.startsWith(DsifPricingConstraintFunction.DSIF_NAMESPACE) || key.startsWith(DsifPricingConstraintFunction.DSIF_COMPACT_PREFIX)) {
+                return Set.of(CATALOG_SCOPE, NEGOTIATION_SCOPE);
+            }
+            return Set.of();
+        });
 
         // Register dynamic function for all dsif: namespace constraints (always passes)
         policyEngine.registerFunction(CatalogPolicyContext.class, Duty.class, new DsifPricingConstraintFunction<>());

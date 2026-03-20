@@ -21,10 +21,11 @@ import org.eclipse.edc.policy.model.Rule;
 public class DsifPricingConstraintFunction<R extends Rule, C extends PolicyContext> implements DynamicAtomicConstraintRuleFunction<R, C> {
 
     public static final String DSIF_NAMESPACE = "https://spec.dsif.dev/ns#";
+    public static final String DSIF_COMPACT_PREFIX = "dsif:";
 
     @Override
     public boolean canHandle(Object leftValue) {
-        return leftValue instanceof String s && s.startsWith(DSIF_NAMESPACE);
+        return leftValue instanceof String s && (s.startsWith(DSIF_NAMESPACE) || s.startsWith(DSIF_COMPACT_PREFIX));
     }
 
     @Override
