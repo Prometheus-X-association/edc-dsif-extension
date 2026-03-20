@@ -7,6 +7,7 @@ package org.dsif.edc.extension.catalog;
 import org.dsif.edc.extension.catalog.controller.*;
 import org.dsif.edc.extension.catalog.policy.DsifPricingConstraintFunction;
 import org.dsif.edc.extension.catalog.policy.OdrlDateTimeConstraintFunction;
+import org.dsif.edc.extension.catalog.policy.OdrlPassthroughConstraintFunction;
 import org.dsif.edc.extension.catalog.service.*;
 import org.eclipse.edc.connector.controlplane.asset.spi.index.AssetIndex;
 import org.eclipse.edc.connector.controlplane.catalog.spi.DatasetResolver;
@@ -18,7 +19,9 @@ import org.eclipse.edc.policy.engine.spi.PolicyEngine;
 import org.eclipse.edc.policy.engine.spi.RuleBindingRegistry;
 import org.eclipse.edc.policy.model.Duty;
 import org.eclipse.edc.policy.model.Permission;
+import org.eclipse.edc.policy.model.Prohibition;
 
+import java.util.List;
 import java.util.Set;
 import org.eclipse.edc.runtime.metamodel.annotation.Extension;
 import org.eclipse.edc.runtime.metamodel.annotation.Inject;
@@ -146,25 +149,39 @@ public class DsifCatalogExtension implements ServiceExtension {
         webService.registerResource(searchController);
     }
 
-    private void registerDsifPolicyFunctions() {
-        // --- DSIF Pricing (descriptive, always-pass) ---
-        // Bind the odrl:compensate action to catalog and negotiation scopes
-        ruleBindingRegistry.bind("odrl:compensate", CATALOG_SCOPE);
-        ruleBindingRegistry.bind("odrl:compensate", NEGOTIATION_SCOPE);
-        ruleBindingRegistry.bind("http://www.w3.org/ns/odrl/2/compensate", CATALOG_SCOPE);
-        ruleBindingRegistry.bind("http://www.w3.org/ns/odrl/2/compensate", NEGOTIATION_SCOPE);
+    private static final String ODRL_NS = "http://www.w3.org/ns/odrl/2/";
 
-        // Dynamic scope binding for all dsif: namespace leftOperands (expanded or compact prefix)
+    private void registerDsifPolicyFunctions() {
+        // --- ODRL actions: bind all common actions to catalog and negotiation scopes ---
+        var odrlActions = List.of("compensate", "distribute", "commercialize", "delete");
+        for (var action : odrlActions) {
+            ruleBindingRegistry.bind("odrl:" + action, CATALOG_SCOPE);
+            ruleBindingRegistry.bind("odrl:" + action, NEGOTIATION_SCOPE);
+            ruleBindingRegistry.bind(ODRL_NS + action, CATALOG_SCOPE);
+            ruleBindingRegistry.bind(ODRL_NS + action, NEGOTIATION_SCOPE);
+        }
+
+        // Dynamic scope binding for dsif: and odrl: namespace leftOperands
         ruleBindingRegistry.dynamicBind(key -> {
-            if (key.startsWith(DsifPricingConstraintFunction.DSIF_NAMESPACE) || key.startsWith(DsifPricingConstraintFunction.DSIF_COMPACT_PREFIX)) {
+            if (key.startsWith(DsifPricingConstraintFunction.DSIF_NAMESPACE)
+                    || key.startsWith(DsifPricingConstraintFunction.DSIF_COMPACT_PREFIX)
+                    || key.startsWith(ODRL_NS)
+                    || key.startsWith("odrl:")) {
                 return Set.of(CATALOG_SCOPE, NEGOTIATION_SCOPE);
             }
             return Set.of();
         });
 
+        // --- DSIF Pricing (descriptive, always-pass) ---
         // Register dynamic function for all dsif: namespace constraints (always passes)
         policyEngine.registerFunction(CatalogPolicyContext.class, Duty.class, new DsifPricingConstraintFunction<>());
         policyEngine.registerFunction(ContractNegotiationPolicyContext.class, Duty.class, new DsifPricingConstraintFunction<>());
+
+        // --- ODRL descriptive constraints (always-pass for odrl: namespace leftOperands like odrl:event) ---
+        policyEngine.registerFunction(CatalogPolicyContext.class, Duty.class, new OdrlPassthroughConstraintFunction<>());
+        policyEngine.registerFunction(ContractNegotiationPolicyContext.class, Duty.class, new OdrlPassthroughConstraintFunction<>());
+        policyEngine.registerFunction(CatalogPolicyContext.class, Prohibition.class, new OdrlPassthroughConstraintFunction<>());
+        policyEngine.registerFunction(ContractNegotiationPolicyContext.class, Prohibition.class, new OdrlPassthroughConstraintFunction<>());
 
         // --- ODRL dateTime (enforced, compares current time to ISO-8601 bound) ---
         var dateTimeKey = OdrlDateTimeConstraintFunction.ODRL_DATETIME_KEY;
