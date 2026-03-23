@@ -48,6 +48,18 @@ import java.util.stream.Collectors;
  *
  * When no participant context is provided (e.g., anonymous catalog browsing),
  * falls back to using AssetIndex directly to return all available assets.
+ *
+ * <h2>Pricing resolution order</h2>
+ * The {@code dsif:pricing} field on each dataset is resolved with the following priority:
+ * <ol>
+ *   <li><b>odrl:compensate clause</b> — duties (on permissions or top-level obligations)
+ *       whose action is {@code odrl:compensate}. Their {@code dsif:*} atomic constraints
+ *       are extracted as pricing fields (e.g. costPerAPICall, currency).</li>
+ *   <li><b>Asset properties</b> — a {@code dsif:pricing} (or fully-qualified namespace)
+ *       map stored directly on the asset, with JSON-LD expanded-value unwrapping.</li>
+ *   <li><b>Any policy duty</b> — broader fallback: any duty carrying {@code dsif:*}
+ *       constraints, regardless of its action type.</li>
+ * </ol>
  */
 public class DsifCatalogService {
 
@@ -289,61 +301,76 @@ public class DsifCatalogService {
             builder.add("dsif:rating", rating);
         }
 
-        // Pricing (DSIF-specific) - extract from asset properties
-        Object pricing = getPropertyValue(props, "dsif:pricing");
-        if (pricing == null) {
-            pricing = props.get("https://spec.dsif.dev/ns#pricing");
+        // Pricing (DSIF-specific)
+        // Priority 1: Extract from odrl:compensate clause in the associated policy
+        JsonObject compensatePricing = null;
+        ContractDefinition contractDefForPricing = contractIndex.get(dataset.getId());
+        if (contractDefForPricing != null) {
+            PolicyDefinition policyDefForPricing = policyDefinitionStore.findById(contractDefForPricing.getContractPolicyId());
+            if (policyDefForPricing != null) {
+                compensatePricing = extractPricingFromCompensateClause(policyDefForPricing.getPolicy(), factory);
+            }
         }
-        if (pricing instanceof Map) {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> pricingMap = (Map<String, Object>) pricing;
-            var pricingBuilder = factory.createObjectBuilder();
 
-            // Extract pricing fields (unwrap JSON-LD expanded values)
-            Object cost = getPricingField(pricingMap, "costPerAPICall");
-            if (cost != null) {
-                Object unwrapped = unwrapJsonLdValue(cost);
-                if (unwrapped instanceof Number) {
-                    pricingBuilder.add("dsif:costPerAPICall", ((Number) unwrapped).doubleValue());
-                } else {
-                    try {
-                        pricingBuilder.add("dsif:costPerAPICall", Double.parseDouble(String.valueOf(unwrapped)));
-                    } catch (NumberFormatException e) {
-                        pricingBuilder.add("dsif:costPerAPICall", String.valueOf(unwrapped));
+        if (compensatePricing != null) {
+            builder.add("dsif:pricing", compensatePricing);
+        } else {
+            // Priority 2: Extract from asset properties
+            Object pricing = getPropertyValue(props, "dsif:pricing");
+            if (pricing == null) {
+                pricing = props.get("https://spec.dsif.dev/ns#pricing");
+            }
+            if (pricing instanceof Map) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> pricingMap = (Map<String, Object>) pricing;
+                var pricingBuilder = factory.createObjectBuilder();
+
+                // Extract pricing fields (unwrap JSON-LD expanded values)
+                Object cost = getPricingField(pricingMap, "costPerAPICall");
+                if (cost != null) {
+                    Object unwrapped = unwrapJsonLdValue(cost);
+                    if (unwrapped instanceof Number) {
+                        pricingBuilder.add("dsif:costPerAPICall", ((Number) unwrapped).doubleValue());
+                    } else {
+                        try {
+                            pricingBuilder.add("dsif:costPerAPICall", Double.parseDouble(String.valueOf(unwrapped)));
+                        } catch (NumberFormatException e) {
+                            pricingBuilder.add("dsif:costPerAPICall", String.valueOf(unwrapped));
+                        }
                     }
                 }
-            }
 
-            Object fee = getPricingField(pricingMap, "setupFee");
-            if (fee != null) {
-                Object unwrapped = unwrapJsonLdValue(fee);
-                if (unwrapped instanceof Number) {
-                    pricingBuilder.add("dsif:setupFee", ((Number) unwrapped).doubleValue());
-                } else {
-                    try {
-                        pricingBuilder.add("dsif:setupFee", Double.parseDouble(String.valueOf(unwrapped)));
-                    } catch (NumberFormatException e) {
-                        pricingBuilder.add("dsif:setupFee", String.valueOf(unwrapped));
+                Object fee = getPricingField(pricingMap, "setupFee");
+                if (fee != null) {
+                    Object unwrapped = unwrapJsonLdValue(fee);
+                    if (unwrapped instanceof Number) {
+                        pricingBuilder.add("dsif:setupFee", ((Number) unwrapped).doubleValue());
+                    } else {
+                        try {
+                            pricingBuilder.add("dsif:setupFee", Double.parseDouble(String.valueOf(unwrapped)));
+                        } catch (NumberFormatException e) {
+                            pricingBuilder.add("dsif:setupFee", String.valueOf(unwrapped));
+                        }
                     }
                 }
-            }
 
-            Object period = getPricingField(pricingMap, "billingPeriod");
-            if (period != null) {
-                pricingBuilder.add("dsif:billingPeriod", String.valueOf(unwrapJsonLdValue(period)));
-            }
+                Object period = getPricingField(pricingMap, "billingPeriod");
+                if (period != null) {
+                    pricingBuilder.add("dsif:billingPeriod", String.valueOf(unwrapJsonLdValue(period)));
+                }
 
-            Object currency = getPricingField(pricingMap, "currency");
-            if (currency != null) {
-                pricingBuilder.add("dsif:currency", String.valueOf(unwrapJsonLdValue(currency)));
-            }
+                Object currency = getPricingField(pricingMap, "currency");
+                if (currency != null) {
+                    pricingBuilder.add("dsif:currency", String.valueOf(unwrapJsonLdValue(currency)));
+                }
 
-            Object desc = getPricingField(pricingMap, "description");
-            if (desc != null) {
-                pricingBuilder.add("dsif:description", String.valueOf(unwrapJsonLdValue(desc)));
-            }
+                Object desc = getPricingField(pricingMap, "description");
+                if (desc != null) {
+                    pricingBuilder.add("dsif:description", String.valueOf(unwrapJsonLdValue(desc)));
+                }
 
-            builder.add("dsif:pricing", pricingBuilder);
+                builder.add("dsif:pricing", pricingBuilder);
+            }
         }
 
         // Preview links (DSIF-specific) - links to sample/preview content
@@ -414,8 +441,10 @@ public class DsifCatalogService {
             if (policyDef != null) {
                 builder.add("odrl:hasPolicy", buildOdrlPolicy(policyDef.getPolicy(), factory));
 
-                // Extract pricing from policy duties if not already set from asset properties
-                if (pricing == null) {
+                // Priority 3: Extract pricing from any policy duties if not already set
+                // (compensate clause and asset properties were already tried above)
+                if (compensatePricing == null && !(getPropertyValue(props, "dsif:pricing") instanceof Map)
+                        && props.get("https://spec.dsif.dev/ns#pricing") == null) {
                     var policyPricing = extractPricingFromPolicy(policyDef.getPolicy(), factory);
                     if (policyPricing != null) {
                         builder.add("dsif:pricing", policyPricing);
@@ -533,8 +562,46 @@ public class DsifCatalogService {
     }
 
     /**
+     * Extract DSIF pricing specifically from odrl:compensate duties in the policy.
+     * This is the preferred source for pricing information, as it directly
+     * represents the compensation terms declared in the ODRL policy.
+     */
+    private JsonObject extractPricingFromCompensateClause(Policy policy, jakarta.json.JsonBuilderFactory factory) {
+        // Check duties on permissions for compensate action
+        for (Permission permission : policy.getPermissions()) {
+            for (Duty duty : permission.getDuties()) {
+                if (isCompensateAction(duty)) {
+                    var pricing = extractPricingFromDuty(duty, factory);
+                    if (pricing != null) return pricing;
+                }
+            }
+        }
+        // Check top-level obligations for compensate action
+        for (Duty duty : policy.getObligations()) {
+            if (isCompensateAction(duty)) {
+                var pricing = extractPricingFromDuty(duty, factory);
+                if (pricing != null) return pricing;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Check if a duty's action is odrl:compensate.
+     */
+    private boolean isCompensateAction(Duty duty) {
+        if (duty.getAction() == null || duty.getAction().getType() == null) {
+            return false;
+        }
+        String actionType = duty.getAction().getType();
+        return "odrl:compensate".equals(actionType)
+                || "compensate".equals(actionType)
+                || (ODRL_NAMESPACE + "compensate").equals(actionType);
+    }
+
+    /**
      * Extract DSIF pricing information from policy duties.
-     * Looks for duties with odrl:compensate action and dsif: namespace constraints.
+     * Looks for any duties with dsif: namespace constraints (broader fallback).
      */
     private JsonObject extractPricingFromPolicy(Policy policy, jakarta.json.JsonBuilderFactory factory) {
         // Check duties on permissions
