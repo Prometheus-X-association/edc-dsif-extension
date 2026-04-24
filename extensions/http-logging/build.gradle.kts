@@ -20,4 +20,9 @@ dependencies {
     api(libs.edc.spi.core)
     implementation(libs.okhttp)
     implementation(libs.okhttp.logging)
+
+    // Only used to declare an @Inject edge that orders this extension after
+    // EDC's RuntimeDefaultCoreServicesExtension (the sole provider of
+    // RetryPolicy<Response>), so our @Provider OkHttpClient registers last.
+    implementation(libs.failsafe.core)
 }
