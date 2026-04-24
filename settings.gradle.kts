@@ -8,6 +8,7 @@
 rootProject.name = "edc-dsif-extension"
 
 include(":extensions:dsif-catalog")
+include(":extensions:http-logging")
 
 // Dependency version catalog
 dependencyResolutionManagement {
