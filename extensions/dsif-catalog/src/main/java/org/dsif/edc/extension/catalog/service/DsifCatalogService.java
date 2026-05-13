@@ -289,6 +289,20 @@ public class DsifCatalogService {
         // DSP Asset ID (the raw ID for contract negotiation)
         builder.add("dspace:assetId", dataset.getId());
 
+        // Asset API endpoint — surfaces the underlying data-address baseUrl as a
+        // DSIF-specific term so consumers can identify the machine-readable resource
+        // (typically JSON-LD). NOTE: exposing this lets clients bypass the DSP
+        // transfer flow; only safe when the upstream resource is intended to be
+        // publicly reachable. Remove this block if not.
+        Asset asset = assetIndex.findById(dataset.getId());
+        if (asset != null && asset.getDataAddress() != null) {
+            String baseUrl = asset.getDataAddress().getStringProperty("baseUrl");
+            if (baseUrl != null && !baseUrl.isEmpty()) {
+                builder.add("dsif:apiEndpoint", factory.createObjectBuilder()
+                        .add("@id", baseUrl));
+            }
+        }
+
         // Author / Creator
         String author = getProp(props, "author");
         if (author != null) {
